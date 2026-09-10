@@ -1,0 +1,60 @@
+name: Build
+
+# Every push to master builds the shaded launcher jar via mvn package (on GitHub's runners, not
+# locally - no Maven install needed on your machine) and publishes it as a GitHub Release, with the
+# version auto-bumped off the latest existing vX.Y.Z tag - same pattern as SoultideClient's release
+# workflow. Grab the built jar with `gh release download --repo NemesisRSPS/SoultideLauncher` or
+# from the repo's Releases page.
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need full tag history to find the latest vX.Y.Z for auto-bumping
+
+      - name: Determine release version
+        id: version
+        run: |
+          LATEST=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          LATEST=${LATEST:-v0.0.0}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+          echo "tag=v${MAJOR}.${MINOR}.$((PATCH + 1))" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Build shaded jar
+        run: mvn -B package
+
+      - name: Locate and rename built jar
+        id: jar
+        run: |
+          JAR=$(find target -maxdepth 1 -name '*.jar' ! -name '*-sources.jar' ! -name 'original-*.jar' | head -1)
+          if [ -z "$JAR" ]; then
+            echo "No shaded jar found in target/" >&2
+            exit 1
+          fi
+          cp "$JAR" SoultideLauncher.jar
+          echo "path=SoultideLauncher.jar" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --target "${{ github.sha }}" \
+            "${{ steps.jar.outputs.path }}" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --generate-notes
