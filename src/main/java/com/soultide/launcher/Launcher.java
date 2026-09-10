@@ -29,28 +29,50 @@ public final class Launcher extends JFrame {
     private static final int HOTSPOT_TOP = 425;
     private static final int HOTSPOT_HEIGHT = 75;
 
+    // null if loading failed - paintComponent falls back to a solid color + visible diagnostic text
+    // instead of silently leaving the panel blank, which is what a swallowed exception on the EDT
+    // would otherwise look like (Swing doesn't crash the app over a paint failure, it just leaves
+    // that frame unpainted - indistinguishable from "nothing drew" unless something explicitly
+    // reports why).
     private final BufferedImage background;
+    private final String backgroundLoadError;
     private final JLabel statusLabel = new JLabel("", SwingConstants.CENTER);
     private final JProgressBar progressBar = new JProgressBar(0, 100);
     private JButton updateHotspot;
     private JButton playHotspot;
 
-    private Launcher() throws IOException {
+    private Launcher() {
         super("Soultide Launcher");
-        background = loadBackground();
+        BufferedImage loaded;
+        String loadError = null;
+        try {
+            loaded = loadBackground();
+        } catch (Exception e) {
+            loaded = null;
+            loadError = e.getClass().getSimpleName() + ": " + e.getMessage();
+            e.printStackTrace();
+        }
+        background = loaded;
+        backgroundLoadError = loadError;
 
         setUndecorated(true);
-        setSize(WIDTH, HEIGHT);
-        setLocationRelativeTo(null);
         setResizable(false);
 
         JPanel root = new JPanel(null) {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                g.drawImage(background, 0, 0, WIDTH, HEIGHT, null);
+                if (background != null) {
+                    g.drawImage(background, 0, 0, WIDTH, HEIGHT, null);
+                } else {
+                    g.setColor(new Color(20, 10, 30));
+                    g.fillRect(0, 0, WIDTH, HEIGHT);
+                    g.setColor(Color.RED);
+                    g.drawString("Background failed to load: " + backgroundLoadError, 16, 40);
+                }
             }
         };
+        root.setOpaque(true);
         root.setPreferredSize(new Dimension(WIDTH, HEIGHT));
 
         statusLabel.setForeground(new Color(220, 255, 235));
@@ -62,6 +84,18 @@ public final class Launcher extends JFrame {
         progressBar.setVisible(false);
         root.add(progressBar);
 
+        JButton closeButton = new JButton("✕");
+        closeButton.setBounds(WIDTH - 34, 8, 24, 24);
+        closeButton.setForeground(Color.WHITE);
+        closeButton.setFont(closeButton.getFont().deriveFont(Font.BOLD, 13f));
+        closeButton.setFocusPainted(false);
+        closeButton.setContentAreaFilled(false);
+        closeButton.setBorderPainted(false);
+        closeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeButton.setToolTipText("Close");
+        closeButton.addActionListener(e -> onExit());
+        root.add(closeButton);
+
         playHotspot = addHotspot(root, 0, "Play", e -> onPlay());
         addHotspot(root, 1, "Settings", e -> onSettings());
         updateHotspot = addHotspot(root, 2, "Update", e -> onUpdate());
@@ -69,12 +103,16 @@ public final class Launcher extends JFrame {
         addHotspot(root, 4, "Support", e -> onSupport());
 
         setContentPane(root);
+        pack();
+        setLocationRelativeTo(null);
     }
 
     private BufferedImage loadBackground() throws IOException {
         try (InputStream in = Launcher.class.getResourceAsStream("/launcher-background.png")) {
             if (in == null) throw new IOException("launcher-background.png missing from classpath");
-            return ImageIO.read(in);
+            BufferedImage img = ImageIO.read(in);
+            if (img == null) throw new IOException("ImageIO could not decode launcher-background.png");
+            return img;
         }
     }
 
@@ -94,15 +132,14 @@ public final class Launcher extends JFrame {
     }
 
     public static void main(String[] args) {
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception ignored) {
+        }
         SwingUtilities.invokeLater(() -> {
-            try {
-                Launcher launcher = new Launcher();
-                launcher.setVisible(true);
-                launcher.checkForUpdatesSilently();
-            } catch (IOException e) {
-                JOptionPane.showMessageDialog(null, "Failed to start launcher: " + e.getMessage(),
-                        "Soultide Launcher", JOptionPane.ERROR_MESSAGE);
-            }
+            Launcher launcher = new Launcher();
+            launcher.setVisible(true);
+            launcher.checkForUpdatesSilently();
         });
     }
 
