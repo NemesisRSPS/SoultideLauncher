@@ -83,10 +83,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release download "${{ needs.build-and-release.outputs.tag }}" -p SoultideLauncher.jar --repo ${{ github.repository }}
 
-      # jpackage's --type exe needs WiX 3.x on PATH - pinned explicitly rather than trusting
-      # whatever the runner image happens to preinstall (WiX v4's CLI isn't compatible).
-      - name: Install WiX Toolset 3.x
-        run: choco install wixtoolset --version=3.14.1 -y
+      # jpackage's --type exe needs WiX 3.x on PATH - windows-latest already ships it (confirmed via
+      # an actual run: v3.14.1.20250415), and pinning an older version through choco here just fails
+      # ("newer version already installed") rather than helping, so nothing to install.
 
       - name: Build the installer
         shell: pwsh
