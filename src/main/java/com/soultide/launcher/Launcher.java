@@ -58,21 +58,34 @@ public final class Launcher extends JFrame {
         setUndecorated(true);
         setResizable(false);
 
-        JPanel root = new JPanel(null) {
-            @Override
-            protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                if (background != null) {
-                    g.drawImage(background, 0, 0, WIDTH, HEIGHT, null);
-                } else {
+        // A plain JLabel(ImageIcon) instead of a custom-painted JPanel - Swing's own, heavily-used
+        // way to show a static image, and other components can still sit on top of it directly
+        // (JLabel is a Container like any other JComponent - setLayout(null) + add() works the same
+        // way). Deliberately not relying on an overridden paintComponent()/drawImage() here: a
+        // reported "blank white, only child components visible" symptom on a real window couldn't
+        // be reproduced or explained via that path (image loads fine, drawImage works fine in
+        // isolation), so this sidesteps whatever that was rather than keep guessing at the cause.
+        JComponent root;
+        if (background != null) {
+            JLabel backgroundLabel = new JLabel(new ImageIcon(background));
+            backgroundLabel.setBounds(0, 0, WIDTH, HEIGHT);
+            backgroundLabel.setLayout(null);
+            backgroundLabel.setOpaque(true);
+            root = backgroundLabel;
+        } else {
+            JPanel fallback = new JPanel(null) {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    super.paintComponent(g);
                     g.setColor(new Color(20, 10, 30));
                     g.fillRect(0, 0, WIDTH, HEIGHT);
                     g.setColor(Color.RED);
                     g.drawString("Background failed to load: " + backgroundLoadError, 16, 40);
                 }
-            }
-        };
-        root.setOpaque(true);
+            };
+            fallback.setOpaque(true);
+            root = fallback;
+        }
         root.setPreferredSize(new Dimension(WIDTH, HEIGHT));
 
         statusLabel.setForeground(new Color(220, 255, 235));
@@ -116,7 +129,7 @@ public final class Launcher extends JFrame {
         }
     }
 
-    private JButton addHotspot(JPanel root, int index, String tooltip, java.awt.event.ActionListener action) {
+    private JButton addHotspot(JComponent root, int index, String tooltip, java.awt.event.ActionListener action) {
         JButton button = new JButton();
         button.setBounds(HOTSPOT_CENTERS_X[index] - HOTSPOT_HALF_WIDTH, HOTSPOT_TOP,
                 HOTSPOT_HALF_WIDTH * 2, HOTSPOT_HEIGHT);
