@@ -3,6 +3,14 @@
 A small Swing app: checks the VPS for the latest SoultideClient release, downloads it (plus loose
 runtime assets like the loading/login screen art) if out of date, then launches the client.
 
+## Getting it
+
+- **Windows, no Java required:** grab `SoultideLauncher-Setup.exe` from the
+  [latest release](https://github.com/NemesisRSPS/SoultideLauncher/releases/latest) and run it - a
+  real installer with Java bundled inside, built by `jpackage` (see `.github/workflows/build.yml`).
+- **Any OS with Java already installed:** grab `SoultideLauncher.jar` from the same release and run
+  `java -jar SoultideLauncher.jar`, or double-click it if your system runs jars on double-click.
+
 ## How it fits together
 
 - **SoultideClient** publishes a GitHub Release (private repo) whenever a `vX.Y.Z` tag is pushed -

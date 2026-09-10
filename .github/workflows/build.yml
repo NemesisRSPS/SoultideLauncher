@@ -16,6 +16,8 @@ permissions:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,3 +60,59 @@ jobs:
             "${{ steps.jar.outputs.path }}" \
             --title "${{ steps.version.outputs.tag }}" \
             --generate-notes
+
+  # Native Windows installer with a bundled JRE - jpackage (needs JDK 14+, unrelated to the JDK 8
+  # target the jar itself is built/run with above) wraps the already-published jar from the job
+  # above into a real .exe via WiX, so players never need Java installed at all. Runs as a second
+  # job (can't cross-compile a Windows installer from the ubuntu-latest runner) that uploads onto
+  # the SAME release the jar job just created, rather than a separate release.
+  build-windows-installer:
+    needs: build-and-release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (for jpackage)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Download the jar already published to this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "${{ needs.build-and-release.outputs.tag }}" -p SoultideLauncher.jar --repo ${{ github.repository }}
+
+      # jpackage's --type exe needs WiX 3.x on PATH - pinned explicitly rather than trusting
+      # whatever the runner image happens to preinstall (WiX v4's CLI isn't compatible).
+      - name: Install WiX Toolset 3.x
+        run: choco install wixtoolset --version=3.14.1 -y
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $version = "${{ needs.build-and-release.outputs.tag }}".TrimStart('v')
+          jpackage `
+            --input . `
+            --name SoultideLauncher `
+            --main-jar SoultideLauncher.jar `
+            --main-class com.soultide.launcher.Launcher `
+            --type exe `
+            --app-version $version `
+            --vendor Soultide `
+            --description "Soultide Launcher" `
+            --icon packaging\icon.ico `
+            --win-shortcut `
+            --win-menu `
+            --dest out
+
+      - name: Rename to a stable asset name
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem out\*.exe | Select-Object -First 1
+          Copy-Item $exe.FullName SoultideLauncher-Setup.exe
+
+      - name: Upload installer to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ needs.build-and-release.outputs.tag }}" SoultideLauncher-Setup.exe --clobber --repo ${{ github.repository }}
