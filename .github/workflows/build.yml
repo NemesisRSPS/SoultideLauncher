@@ -72,7 +72,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 21 (for jpackage)
+      # Two JDKs on purpose: jpackage itself needs 14+ to run at all, but SoultideClient.jar (what
+      # this launcher's own Play button execs via java.home-derived path - see Launcher.onPlay) is
+      # old-style applet-era code (java.applet.Applet, javax.sound.midi, ...) that only runs on 8 -
+      # Applet was removed outright in JDK 17. Bundling whatever JDK ran jpackage (21) meant every
+      # fresh install's client crashed instantly with NoClassDefFoundError: java/applet/Applet, since
+      # the bundled runtime IS what java.home resolves to at runtime. setup-java exposes each JDK it
+      # installs as JAVA_HOME_<version>_X64 in addition to overwriting the plain JAVA_HOME each call,
+      # so both stay addressable regardless of setup order.
+      - name: Set up JDK 8 (bundled as the installer's actual runtime)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Set up JDK 21 (to run jpackage itself)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -103,6 +117,7 @@ jobs:
             --icon packaging\icon.ico `
             --win-shortcut `
             --win-menu `
+            --runtime-image "$env:JAVA_HOME_8_X64" `
             --dest out
 
       - name: Rename to a stable asset name
