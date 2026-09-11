@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 
 /**
@@ -261,6 +262,25 @@ public final class Launcher extends JFrame {
         }.execute();
     }
 
+    /** The jpackage-built .exe wraps this in its own bundled runtime with no console attached at
+     *  all (it's a windowed app, not a console one) - .inheritIO() used to hand the client process
+     *  stdout/stderr streams that go nowhere, so a crash on the client's own startup (before its
+     *  first window ever appears) was completely invisible: the process would just exit and the
+     *  launcher would silently move on. Redirecting both streams to a log file instead means a
+     *  startup crash leaves something an actual person can open and read (or send us). */
+    private Path resolveJavaBinary() {
+        String home = System.getProperty("java.home");
+        Path bin = Paths.get(home, "bin");
+        Path withExe = bin.resolve("java.exe"); // Windows - the only platform this ships an installer for
+        if (Files.isRegularFile(withExe)) return withExe;
+        Path noExt = bin.resolve("java");
+        if (Files.isRegularFile(noExt)) return noExt;
+        // Neither resolved under java.home (shouldn't happen for a jpackage-bundled runtime, but
+        // rather than fail outright on a wrong/unexpected java.home, fall back to whatever "java"
+        // resolves to on PATH - ProcessBuilder can run a bare command name directly.
+        return Paths.get("java");
+    }
+
     private void onPlay() {
         if (!localJarExists()) {
             setStatus("No client installed - click Update first");
@@ -269,15 +289,17 @@ public final class Launcher extends JFrame {
         setBusy(true);
         setStatus("Launching...");
         Path jarPath = LauncherConfig.CACHE_DIR.resolve(LauncherConfig.CLIENT_JAR_NAME);
-        String javaBin = System.getProperty("java.home") + java.io.File.separator + "bin" + java.io.File.separator + "java";
+        Path javaBin = resolveJavaBinary();
+        Path logFile = LauncherConfig.CACHE_DIR.resolve("client-launch.log");
         try {
-            new ProcessBuilder(javaBin, "-jar", jarPath.toString())
+            new ProcessBuilder(javaBin.toString(), "-jar", jarPath.toString())
                     .directory(LauncherConfig.CACHE_DIR.toFile())
-                    .inheritIO()
+                    .redirectErrorStream(true)
+                    .redirectOutput(logFile.toFile())
                     .start();
             dispose();
         } catch (IOException e) {
-            setStatus("Failed to launch: " + e.getMessage());
+            setStatus("Failed to launch (tried " + javaBin + "): " + e.getMessage());
             setBusy(false);
         }
     }
