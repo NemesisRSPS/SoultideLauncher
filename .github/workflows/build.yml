@@ -110,6 +110,11 @@ jobs:
       # an actual run: v3.14.1.20250415), and pinning an older version through choco here just fails
       # ("newer version already installed") rather than helping, so nothing to install.
 
+      # --temp keeps jpackage's intermediate app-image around after the exe/msi wrap instead of
+      # deleting it - lets the next step inspect exactly where --app-content landed client-jdk8
+      # using the SAME build (no second full jpackage invocation - an earlier attempt at that via a
+      # separate --type app-image run took 12+ minutes and never finished, apparently re-copying the
+      # whole JDK 8 bundle a second time on top of whatever made the first run slow).
       - name: Build the installer
         shell: pwsh
         run: |
@@ -127,26 +132,19 @@ jobs:
             --app-content client-jdk8 `
             --win-shortcut `
             --win-menu `
+            --temp appimage-temp `
             --dest out
 
-      - name: Verify where --app-content actually landed client-jdk8 (app-image build, for inspection only)
+      - name: Log where --app-content landed client-jdk8 (inspects the kept --temp dir, no rebuild)
         shell: pwsh
         run: |
-          jpackage `
-            --input . `
-            --name SoultideLauncherImage `
-            --main-jar SoultideLauncher.jar `
-            --main-class com.soultide.launcher.Launcher `
-            --type app-image `
-            --app-content client-jdk8 `
-            --dest imgout
-          Write-Host "--- app image tree (top 3 levels) ---"
-          Get-ChildItem -Recurse -Depth 2 imgout | Select-Object FullName | Format-Table -AutoSize
-          $found = Get-ChildItem -Recurse -Directory imgout -Filter "client-jdk8" | Select-Object -First 1
+          Write-Host "--- appimage-temp tree (top 3 levels) ---"
+          Get-ChildItem -Recurse -Depth 2 appimage-temp | Select-Object FullName | Format-Table -AutoSize
+          $found = Get-ChildItem -Recurse -Directory appimage-temp -Filter "client-jdk8" -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($found) {
             Write-Host "FOUND client-jdk8 at: $($found.FullName)"
           } else {
-            Write-Host "client-jdk8 NOT FOUND anywhere under imgout - --app-content did not do what was expected"
+            Write-Host "client-jdk8 NOT FOUND under appimage-temp - --app-content did not do what was expected"
           }
 
       - name: Rename to a stable asset name
