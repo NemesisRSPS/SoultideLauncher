@@ -72,21 +72,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Two JDKs on purpose: jpackage itself needs 14+ to run at all, but SoultideClient.jar (what
-      # this launcher's own Play button execs via java.home-derived path - see Launcher.onPlay) is
+      # Two JDKs on purpose, for different roles - jpackage itself needs 14+ to run at all, and that
+      # same JDK becomes the launcher's OWN bundled runtime (its Swing UI works fine on 21). But
+      # SoultideClient.jar (what ClientJavaResolver in the launcher execs for the Play button) is
       # old-style applet-era code (java.applet.Applet, javax.sound.midi, ...) that only runs on 8 -
-      # Applet was removed outright in JDK 17. Bundling whatever JDK ran jpackage (21) meant every
-      # fresh install's client crashed instantly with NoClassDefFoundError: java/applet/Applet, since
-      # the bundled runtime IS what java.home resolves to at runtime. setup-java exposes each JDK it
-      # installs as JAVA_HOME_<version>_X64 in addition to overwriting the plain JAVA_HOME each call,
-      # so both stay addressable regardless of setup order.
-      - name: Set up JDK 8 (bundled as the installer's actual runtime)
+      # Applet was removed outright in JDK 17. Earlier attempt bundled ONE shared JDK 8 runtime for
+      # both (--runtime-image) - fixed the Applet crash but broke the launcher itself launching the
+      # client at all (Play did nothing, no error), the same lesson a sibling project's launcher
+      # (Bloodtide) already learned: forcing the client onto whatever runtime the launcher's own UI
+      # needs causes subtle failures rather than a clean version mismatch. So instead JDK 8 ships as
+      # a separate "client-jdk8" folder alongside the launcher's own (JDK 21) runtime - see
+      # ClientJavaResolver.resolveClientJavaExecutable(). setup-java exposes each JDK it installs as
+      # JAVA_HOME_<version>_X64 in addition to overwriting the plain JAVA_HOME each call, so both
+      # stay addressable regardless of setup order.
+      - name: Set up JDK 8 (bundled alongside as client-jdk8, NOT the installer's own runtime)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '8'
 
-      - name: Set up JDK 21 (to run jpackage itself)
+      - name: Set up JDK 21 (runs jpackage AND becomes the launcher's own bundled runtime)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -96,6 +101,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release download "${{ needs.build-and-release.outputs.tag }}" -p SoultideLauncher.jar --repo ${{ github.repository }}
+
+      - name: Stage the JDK 8 bundle for --app-content
+        shell: pwsh
+        run: Copy-Item -Recurse "$env:JAVA_HOME_8_X64" client-jdk8
 
       # jpackage's --type exe needs WiX 3.x on PATH - windows-latest already ships it (confirmed via
       # an actual run: v3.14.1.20250415), and pinning an older version through choco here just fails
@@ -115,10 +124,30 @@ jobs:
             --vendor Soultide `
             --description "Soultide Launcher" `
             --icon packaging\icon.ico `
+            --app-content client-jdk8 `
             --win-shortcut `
             --win-menu `
-            --runtime-image "$env:JAVA_HOME_8_X64" `
             --dest out
+
+      - name: Verify where --app-content actually landed client-jdk8 (app-image build, for inspection only)
+        shell: pwsh
+        run: |
+          jpackage `
+            --input . `
+            --name SoultideLauncherImage `
+            --main-jar SoultideLauncher.jar `
+            --main-class com.soultide.launcher.Launcher `
+            --type app-image `
+            --app-content client-jdk8 `
+            --dest imgout
+          Write-Host "--- app image tree (top 3 levels) ---"
+          Get-ChildItem -Recurse -Depth 2 imgout | Select-Object FullName | Format-Table -AutoSize
+          $found = Get-ChildItem -Recurse -Directory imgout -Filter "client-jdk8" | Select-Object -First 1
+          if ($found) {
+            Write-Host "FOUND client-jdk8 at: $($found.FullName)"
+          } else {
+            Write-Host "client-jdk8 NOT FOUND anywhere under imgout - --app-content did not do what was expected"
+          }
 
       - name: Rename to a stable asset name
         shell: pwsh

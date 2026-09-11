@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 
 /**
@@ -268,19 +267,6 @@ public final class Launcher extends JFrame {
      *  first window ever appears) was completely invisible: the process would just exit and the
      *  launcher would silently move on. Redirecting both streams to a log file instead means a
      *  startup crash leaves something an actual person can open and read (or send us). */
-    private Path resolveJavaBinary() {
-        String home = System.getProperty("java.home");
-        Path bin = Paths.get(home, "bin");
-        Path withExe = bin.resolve("java.exe"); // Windows - the only platform this ships an installer for
-        if (Files.isRegularFile(withExe)) return withExe;
-        Path noExt = bin.resolve("java");
-        if (Files.isRegularFile(noExt)) return noExt;
-        // Neither resolved under java.home (shouldn't happen for a jpackage-bundled runtime, but
-        // rather than fail outright on a wrong/unexpected java.home, fall back to whatever "java"
-        // resolves to on PATH - ProcessBuilder can run a bare command name directly.
-        return Paths.get("java");
-    }
-
     private void onPlay() {
         if (!localJarExists()) {
             setStatus("No client installed - click Update first");
@@ -289,17 +275,17 @@ public final class Launcher extends JFrame {
         setBusy(true);
         setStatus("Launching...");
         Path jarPath = LauncherConfig.CACHE_DIR.resolve(LauncherConfig.CLIENT_JAR_NAME);
-        Path javaBin = resolveJavaBinary();
+        String javaBin = ClientJavaResolver.resolveClientJavaExecutable();
         Path logFile = LauncherConfig.CACHE_DIR.resolve("client-launch.log");
         try {
-            new ProcessBuilder(javaBin.toString(), "-jar", jarPath.toString())
+            new ProcessBuilder(javaBin, "-jar", jarPath.toString())
                     .directory(LauncherConfig.CACHE_DIR.toFile())
                     .redirectErrorStream(true)
                     .redirectOutput(logFile.toFile())
                     .start();
             dispose();
         } catch (IOException e) {
-            setStatus("Failed to launch (tried " + javaBin + "): " + e.getMessage());
+            setStatus("Failed to launch (" + ClientJavaResolver.describeClientJavaSource() + "): " + e.getMessage());
             setBusy(false);
         }
     }
