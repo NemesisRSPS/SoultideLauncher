@@ -278,7 +278,16 @@ public final class Launcher extends JFrame {
         String javaBin = ClientJavaResolver.resolveClientJavaExecutable();
         Path logFile = LauncherConfig.CACHE_DIR.resolve("client-launch.log");
         try {
-            new ProcessBuilder(javaBin, "-jar", jarPath.toString())
+            List<String> command = new java.util.ArrayList<>();
+            command.add(javaBin);
+            // Lets the client's own in-game update notice spawn this same launcher back when the
+            // player accepts it, instead of just telling them to go find it themselves - see
+            // SoultideClient's UpdateNotice. Best-effort: a dev run (unpacked classes, no jar on
+            // disk) leaves this unset, and UpdateNotice already degrades to "open it manually" then.
+            ownJarPath().ifPresent(path -> command.add("-DlauncherJar=" + path));
+            command.add("-jar");
+            command.add(jarPath.toString());
+            new ProcessBuilder(command)
                     .directory(LauncherConfig.CACHE_DIR.toFile())
                     .redirectErrorStream(true)
                     .redirectOutput(logFile.toFile())
@@ -287,6 +296,19 @@ public final class Launcher extends JFrame {
         } catch (IOException e) {
             setStatus("Failed to launch (" + ClientJavaResolver.describeClientJavaSource() + "): " + e.getMessage());
             setBusy(false);
+        }
+    }
+
+    /** This launcher's own running jar path, if it's actually running from one (a packaged
+     *  install) - empty during a dev run from unpacked classes, where there's no single jar file
+     *  to point back at. */
+    private static java.util.Optional<String> ownJarPath() {
+        try {
+            java.io.File source = new java.io.File(
+                    Launcher.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            return source.isFile() ? java.util.Optional.of(source.getAbsolutePath()) : java.util.Optional.empty();
+        } catch (Exception e) {
+            return java.util.Optional.empty();
         }
     }
 
