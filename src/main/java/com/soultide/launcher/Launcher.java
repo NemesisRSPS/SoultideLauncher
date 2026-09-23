@@ -221,7 +221,54 @@ public final class Launcher extends JFrame {
             Launcher launcher = new Launcher();
             launcher.setVisible(true);
             launcher.checkForUpdatesSilently();
+            launcher.checkForLauncherSelfUpdate();
         });
+    }
+
+    /** Checks whether THIS launcher build itself is behind SoultideLauncher's own latest GitHub
+     *  release - separate from checkForUpdatesSilently(), which checks the game client. Silently
+     *  does nothing if this is a dev run (no embedded version to compare against) or GitHub can't
+     *  be reached; only bothers the player with a dialog when there's an actual update to offer. */
+    private void checkForLauncherSelfUpdate() {
+        String own = LauncherSelfUpdate.ownVersion();
+        if (own == null) {
+            return;
+        }
+        new SwingWorker<LauncherSelfUpdate.LatestInfo, Void>() {
+            @Override
+            protected LauncherSelfUpdate.LatestInfo doInBackground() throws Exception {
+                return LauncherSelfUpdate.fetchLatest();
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    LauncherSelfUpdate.LatestInfo latest = get();
+                    if (latest.downloadUrl == null || own.equals(latest.version)) {
+                        return;
+                    }
+                    int choice = JOptionPane.showConfirmDialog(Launcher.this,
+                            "A launcher update (" + latest.version + ") is available.\n"
+                                    + "Update now? The launcher will close and the installer will open.",
+                            "Launcher Update Available", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
+                    if (choice != JOptionPane.YES_OPTION) {
+                        return;
+                    }
+                    try {
+                        LauncherSelfUpdate.downloadAndLaunchInstaller(latest.downloadUrl);
+                        dispose();
+                        System.exit(0);
+                    } catch (IOException e) {
+                        JOptionPane.showMessageDialog(Launcher.this,
+                                "Couldn't download the update: " + e.getMessage(),
+                                "Update Failed", JOptionPane.ERROR_MESSAGE);
+                    }
+                } catch (Exception cantReachGithub) {
+                    // Not worth bothering the player with a dialog over this - they'll just get
+                    // asked again next launch.
+                }
+            }
+        }.execute();
     }
 
     private boolean localJarExists() {
