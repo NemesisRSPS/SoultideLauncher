@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,7 +18,8 @@ import java.util.function.IntConsumer;
 /**
  * Talks to the VPS's credential-free /launcher/* routes (see SoultideCacheEditor's WebMain -
  * registerLauncherRoutes) - this process never sees or needs a GitHub token, that lives only on
- * the VPS.
+ * the VPS. Every call takes a channel ("live" or "beta", see LauncherConfig) - the VPS proxy
+ * resolves each one to a different GitHub release, see LauncherReleaseProxy's own class comment.
  */
 final class UpdateChecker {
     private static final Gson GSON = new Gson();
@@ -29,14 +31,15 @@ final class UpdateChecker {
         List<String> assets;
     }
 
-    static VersionInfo fetchLatestVersion() throws IOException {
-        String json = httpGetString(LauncherConfig.VPS_BASE_URL + "/launcher/version");
+    static VersionInfo fetchLatestVersion(String channel) throws IOException {
+        String json = httpGetString(LauncherConfig.VPS_BASE_URL + "/launcher/version?channel=" + urlEncode(channel));
         return GSON.fromJson(json, VersionInfo.class);
     }
 
     /** Downloads one asset (the jar, or a launcher-assets/* file) to dest, reporting 0-100 progress. */
-    static void downloadAsset(String assetName, Path dest, IntConsumer onProgress) throws IOException {
-        URL url = new URL(LauncherConfig.VPS_BASE_URL + "/launcher/download/" + assetName);
+    static void downloadAsset(String channel, String assetName, Path dest, IntConsumer onProgress) throws IOException {
+        URL url = new URL(LauncherConfig.VPS_BASE_URL + "/launcher/download/" + urlEncode(assetName)
+                + "?channel=" + urlEncode(channel));
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setConnectTimeout(10_000);
         conn.setReadTimeout(60_000);
@@ -70,18 +73,27 @@ final class UpdateChecker {
         Files.move(tmp, dest, StandardCopyOption.REPLACE_EXISTING);
     }
 
-    static String readLocalVersion() {
+    static String readLocalVersion(String channel) {
         try {
-            if (!Files.isRegularFile(LauncherConfig.VERSION_FILE)) return null;
-            return new String(Files.readAllBytes(LauncherConfig.VERSION_FILE), StandardCharsets.UTF_8).trim();
+            Path file = LauncherConfig.versionFile(channel);
+            if (!Files.isRegularFile(file)) return null;
+            return new String(Files.readAllBytes(file), StandardCharsets.UTF_8).trim();
         } catch (IOException e) {
             return null;
         }
     }
 
-    static void writeLocalVersion(String version) throws IOException {
+    static void writeLocalVersion(String channel, String version) throws IOException {
         Files.createDirectories(LauncherConfig.CACHE_DIR);
-        Files.write(LauncherConfig.VERSION_FILE, version.getBytes(StandardCharsets.UTF_8));
+        Files.write(LauncherConfig.versionFile(channel), version.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String urlEncode(String s) {
+        try {
+            return URLEncoder.encode(s, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            return s; // UTF-8 is always supported; unreachable in practice
+        }
     }
 
     private static String httpGetString(String url) throws IOException {

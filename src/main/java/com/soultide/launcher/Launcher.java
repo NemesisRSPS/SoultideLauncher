@@ -3,9 +3,11 @@ package com.soultide.launcher;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -38,6 +40,13 @@ public final class Launcher extends JFrame {
     private final String backgroundLoadError;
     private final JLabel statusLabel = new JLabel("", SwingConstants.CENTER);
     private final JProgressBar progressBar = new JProgressBar(0, 100);
+    // Ctrl+B toggle (2026-09-23) - "live" is what everyone gets by default; "beta" is a deliberate,
+    // per-session-persisted opt-in for testing, so the banner below exists specifically to stop
+    // someone forgetting they're on it and reporting a beta-only issue as a live one (or vice
+    // versa). See LauncherConfig's own comment for why each channel gets its own cached jar/version
+    // file instead of sharing one.
+    private String channel = loadChannel();
+    private final JLabel betaBanner = new JLabel("BETA CLIENT - press Ctrl+B for live", SwingConstants.CENTER);
     private JButton updateHotspot;
     private JButton playHotspot;
 
@@ -115,9 +124,68 @@ public final class Launcher extends JFrame {
         addHotspot(root, 3, "Exit", e -> onExit());
         addHotspot(root, 4, "Support", e -> onSupport());
 
+        betaBanner.setOpaque(true);
+        betaBanner.setBackground(new Color(120, 30, 30));
+        betaBanner.setForeground(Color.WHITE);
+        betaBanner.setFont(betaBanner.getFont().deriveFont(Font.BOLD, 12f));
+        betaBanner.setBounds(0, 0, WIDTH, 20);
+        betaBanner.setVisible(isBeta());
+        root.add(betaBanner);
+        // JLabel doesn't reorder its own painting by add() order the way z-index would suggest for
+        // some containers, but for a null-layout JComponent later additions DO paint on top of
+        // earlier ones - moving this to the front explicitly is still worth doing since the
+        // background JLabel itself was added first via setContentPane(root), not root.add(), so
+        // ordering here only affects the hotspots/labels among themselves; kept for clarity, not
+        // strictly required given betaBanner was already added after all of them above.
+        root.setComponentZOrder(betaBanner, 0);
+
         setContentPane(root);
         pack();
         setLocationRelativeTo(null);
+
+        // Bound to the whole window (WHEN_IN_FOCUSED_WINDOW) rather than a specific component, since
+        // this borderless launcher has no obvious single thing that "has focus" from the player's
+        // perspective - a plain addKeyListener on one button/label would miss the shortcut whenever
+        // focus happened to be on a different child.
+        JComponent glass = (JComponent) getRootPane();
+        glass.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_B, java.awt.event.InputEvent.CTRL_DOWN_MASK), "toggleChannel");
+        glass.getActionMap().put("toggleChannel", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                toggleChannel();
+            }
+        });
+    }
+
+    private boolean isBeta() {
+        return LauncherConfig.CHANNEL_BETA.equals(channel);
+    }
+
+    private static String loadChannel() {
+        try {
+            if (Files.isRegularFile(LauncherConfig.CHANNEL_FILE)) {
+                String saved = new String(Files.readAllBytes(LauncherConfig.CHANNEL_FILE), StandardCharsets.UTF_8).trim();
+                if (LauncherConfig.CHANNEL_BETA.equals(saved)) {
+                    return LauncherConfig.CHANNEL_BETA;
+                }
+            }
+        } catch (IOException ignored) {
+        }
+        return LauncherConfig.CHANNEL_LIVE;
+    }
+
+    private void toggleChannel() {
+        channel = isBeta() ? LauncherConfig.CHANNEL_LIVE : LauncherConfig.CHANNEL_BETA;
+        try {
+            Files.createDirectories(LauncherConfig.CACHE_DIR);
+            Files.write(LauncherConfig.CHANNEL_FILE, channel.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ignored) {
+            // Worst case the choice doesn't survive a relaunch - not worth failing the toggle over.
+        }
+        betaBanner.setVisible(isBeta());
+        setStatus(isBeta() ? "Switched to BETA client" : "Switched to LIVE client");
+        checkForUpdatesSilently();
     }
 
     private BufferedImage loadBackground() throws IOException {
@@ -157,13 +225,14 @@ public final class Launcher extends JFrame {
     }
 
     private boolean localJarExists() {
-        return Files.isRegularFile(LauncherConfig.CACHE_DIR.resolve(LauncherConfig.CLIENT_JAR_NAME));
+        return Files.isRegularFile(LauncherConfig.CACHE_DIR.resolve(LauncherConfig.clientJarName(channel)));
     }
 
     /** Background check on startup - reports whether an update is available, but never
      *  auto-downloads. Downloading only ever happens via the Update hotspot, matching the artwork's
      *  own explicit Update button rather than forcing a download on every launch. */
     private void checkForUpdatesSilently() {
+        final String checkedChannel = channel;
         setStatus(localJarExists() ? "Checking for updates..." : "No client installed - click Update");
         new SwingWorker<Void, Void>() {
             private String latestVersion;
@@ -172,7 +241,7 @@ public final class Launcher extends JFrame {
             @Override
             protected Void doInBackground() {
                 try {
-                    latestVersion = UpdateChecker.fetchLatestVersion().version;
+                    latestVersion = UpdateChecker.fetchLatestVersion(checkedChannel).version;
                 } catch (IOException e) {
                     error = e.getMessage();
                 }
@@ -181,7 +250,10 @@ public final class Launcher extends JFrame {
 
             @Override
             protected void done() {
-                String localVersion = UpdateChecker.readLocalVersion();
+                if (!checkedChannel.equals(channel)) {
+                    return; // player toggled channels again before this background check returned
+                }
+                String localVersion = UpdateChecker.readLocalVersion(checkedChannel);
                 if (error != null) {
                     setStatus(localJarExists()
                             ? "Can't reach update server (playing " + (localVersion == null ? "installed version" : localVersion) + ")"
@@ -196,6 +268,7 @@ public final class Launcher extends JFrame {
     }
 
     private void onUpdate() {
+        final String updatingChannel = channel;
         setBusy(true);
         setStatus("Checking for updates...");
         progressBar.setVisible(true);
@@ -206,12 +279,13 @@ public final class Launcher extends JFrame {
             @Override
             protected Void doInBackground() {
                 try {
-                    UpdateChecker.VersionInfo latest = UpdateChecker.fetchLatestVersion();
-                    String localVersion = UpdateChecker.readLocalVersion();
-                    if (!localJarExists() || localVersion == null || !localVersion.equals(latest.version)) {
+                    UpdateChecker.VersionInfo latest = UpdateChecker.fetchLatestVersion(updatingChannel);
+                    String localVersion = UpdateChecker.readLocalVersion(updatingChannel);
+                    if (!Files.isRegularFile(LauncherConfig.CACHE_DIR.resolve(LauncherConfig.clientJarName(updatingChannel)))
+                            || localVersion == null || !localVersion.equals(latest.version)) {
                         publish(new Object[]{"status", "Downloading " + latest.version + "..."});
                         downloadAll(latest);
-                        UpdateChecker.writeLocalVersion(latest.version);
+                        UpdateChecker.writeLocalVersion(updatingChannel, latest.version);
                         publish(new Object[]{"status", "Up to date (" + latest.version + ")"});
                     } else {
                         publish(new Object[]{"status", "Already up to date (" + latest.version + ")"});
@@ -223,14 +297,14 @@ public final class Launcher extends JFrame {
             }
 
             private void downloadAll(UpdateChecker.VersionInfo latest) throws IOException {
-                UpdateChecker.downloadAsset(latest.jarAsset,
-                        LauncherConfig.CACHE_DIR.resolve(LauncherConfig.CLIENT_JAR_NAME),
+                UpdateChecker.downloadAsset(updatingChannel, latest.jarAsset,
+                        LauncherConfig.CACHE_DIR.resolve(LauncherConfig.clientJarName(updatingChannel)),
                         pct -> publish(new Object[]{"progress", latest.jarAsset, pct}));
                 List<String> assets = latest.assets;
                 if (assets != null) {
                     for (String asset : assets) {
                         if (asset.equals(latest.jarAsset)) continue;
-                        UpdateChecker.downloadAsset(asset, LauncherConfig.CACHE_DIR.resolve(asset),
+                        UpdateChecker.downloadAsset(updatingChannel, asset, LauncherConfig.CACHE_DIR.resolve(asset),
                                 pct -> publish(new Object[]{"progress", asset, pct}));
                     }
                 }
@@ -273,8 +347,8 @@ public final class Launcher extends JFrame {
             return;
         }
         setBusy(true);
-        setStatus("Launching...");
-        Path jarPath = LauncherConfig.CACHE_DIR.resolve(LauncherConfig.CLIENT_JAR_NAME);
+        setStatus("Launching" + (isBeta() ? " (beta)" : "") + "...");
+        Path jarPath = LauncherConfig.CACHE_DIR.resolve(LauncherConfig.clientJarName(channel));
         String javaBin = ClientJavaResolver.resolveClientJavaExecutable();
         Path logFile = LauncherConfig.CACHE_DIR.resolve("client-launch.log");
         try {

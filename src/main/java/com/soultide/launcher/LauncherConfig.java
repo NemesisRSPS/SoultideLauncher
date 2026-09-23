@@ -16,8 +16,23 @@ final class LauncherConfig {
     static final String VPS_BASE_URL = "http://" + VPS_HOST + ":" + VPS_PORT;
 
     static final Path CACHE_DIR = Paths.get(System.getProperty("user.home"), "SoultideCache");
-    static final Path VERSION_FILE = CACHE_DIR.resolve(".launcher-version");
-    static final String CLIENT_JAR_NAME = "SoultideClient.jar";
+
+    // Channel switching (2026-09-23, Ctrl+B in the launcher window) - "live" is the default and
+    // what the Play button loads unless the player has explicitly toggled to "beta" this session
+    // (see Launcher's own onCtrlB handler and CHANNEL_FILE below for how that choice persists).
+    // Each channel gets its own jar/version file so switching back and forth doesn't force a
+    // re-download every time - both channels can sit cached side by side.
+    static final String CHANNEL_LIVE = "live";
+    static final String CHANNEL_BETA = "beta";
+    static final Path CHANNEL_FILE = CACHE_DIR.resolve(".launcher-channel");
+
+    static Path versionFile(String channel) {
+        return CACHE_DIR.resolve(".launcher-version-" + channel);
+    }
+
+    static String clientJarName(String channel) {
+        return "SoultideClient-" + channel + ".jar";
+    }
 
     private LauncherConfig() {
     }
