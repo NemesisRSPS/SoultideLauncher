@@ -14,6 +14,12 @@ final class LauncherConfig {
     static final String VPS_HOST = "158.69.193.55";
     static final int VPS_PORT = 7070;
     static final String VPS_BASE_URL = "http://" + VPS_HOST + ":" + VPS_PORT;
+    /** HTTPS through the VPS's nginx (same /launcher/* routes, proxied to port 7070) - tried first
+     *  (2026-10-02): antivirus web shields / ISP and school filters were answering plain http to a
+     *  bare IP:port with a 302 to an https block page, which Java won't follow ("Server returned
+     *  302"). VPS_BASE_URL stays as the fallback for anything that can't do the HTTPS one. */
+    static final String VPS_HTTPS_URL = "https://soultide.duckdns.org";
+    static final String[] BASE_URLS = {VPS_HTTPS_URL, VPS_BASE_URL};
 
     static final Path CACHE_DIR = Paths.get(System.getProperty("user.home"), "SoultideCache");
 

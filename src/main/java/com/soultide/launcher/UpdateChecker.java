@@ -31,14 +31,43 @@ final class UpdateChecker {
         List<String> assets;
     }
 
+    /** The base URL that last answered - downloads go to the same one the version check reached. */
+    private static volatile String workingBase = LauncherConfig.BASE_URLS[0];
+
     static VersionInfo fetchLatestVersion(String channel) throws IOException {
-        String json = httpGetString(LauncherConfig.VPS_BASE_URL + "/launcher/version?channel=" + urlEncode(channel));
-        return GSON.fromJson(json, VersionInfo.class);
+        IOException first = null;
+        for (String base : LauncherConfig.BASE_URLS) {
+            try {
+                String json = httpGetString(base + "/launcher/version?channel=" + urlEncode(channel));
+                workingBase = base;
+                return GSON.fromJson(json, VersionInfo.class);
+            } catch (IOException e) {
+                if (first == null) {
+                    first = e;
+                }
+            }
+        }
+        throw new IOException(first.getMessage() + " - a firewall, antivirus web shield or VPN may be blocking the update server", first);
+    }
+
+    static void downloadAsset(String channel, String assetName, Path dest, IntConsumer onProgress) throws IOException {
+        try {
+            downloadAsset(workingBase, channel, assetName, dest, onProgress);
+        } catch (IOException e) {
+            for (String base : LauncherConfig.BASE_URLS) {
+                if (!base.equals(workingBase)) {
+                    downloadAsset(base, channel, assetName, dest, onProgress);
+                    workingBase = base;
+                    return;
+                }
+            }
+            throw e;
+        }
     }
 
     /** Downloads one asset (the jar, or a launcher-assets/* file) to dest, reporting 0-100 progress. */
-    static void downloadAsset(String channel, String assetName, Path dest, IntConsumer onProgress) throws IOException {
-        URL url = new URL(LauncherConfig.VPS_BASE_URL + "/launcher/download/" + urlEncode(assetName)
+    private static void downloadAsset(String base, String channel, String assetName, Path dest, IntConsumer onProgress) throws IOException {
+        URL url = new URL(base + "/launcher/download/" + urlEncode(assetName)
                 + "?channel=" + urlEncode(channel));
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setConnectTimeout(10_000);
