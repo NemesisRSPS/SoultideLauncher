@@ -31,6 +31,8 @@ final class LauncherConfig {
     static final String CHANNEL_LIVE = "live";
     static final String CHANNEL_BETA = "beta";
     static final Path CHANNEL_FILE = CACHE_DIR.resolve(".launcher-channel");
+    /** The game's language (en/es/pt/fr) - read by the client (com.soultide.Lang), set here or in-game. */
+    static final Path LANGUAGE_FILE = CACHE_DIR.resolve(".language");
 
     static Path versionFile(String channel) {
         return CACHE_DIR.resolve(".launcher-version-" + channel);

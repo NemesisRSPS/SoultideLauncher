@@ -433,10 +433,35 @@ public final class Launcher extends JFrame {
         }
     }
 
+    /** Settings (2026-10-12): the game's language - saved to the same file the game reads (and the in-game Display
+     *  plugin's Language setting writes), so it applies from the next launch and can be changed in-game too. */
     private void onSettings() {
-        JOptionPane.showMessageDialog(this,
-                "Install directory:\n" + LauncherConfig.CACHE_DIR,
-                "Settings", JOptionPane.PLAIN_MESSAGE);
+        String[] names = {"English", "Espa\u00f1ol", "Portugu\u00eas", "Fran\u00e7ais"};
+        String[] codes = {"en", "es", "pt", "fr"};
+        java.nio.file.Path file = LauncherConfig.LANGUAGE_FILE;
+        String current = "en";
+        try {
+            if (java.nio.file.Files.isRegularFile(file)) {
+                current = new String(java.nio.file.Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8).trim().toLowerCase();
+            }
+        } catch (IOException ignored) {
+        }
+        javax.swing.JComboBox<String> language = new javax.swing.JComboBox<>(names);
+        for (int i = 0; i < codes.length; i++) if (codes[i].equals(current)) language.setSelectedIndex(i);
+        javax.swing.JPanel panel = new javax.swing.JPanel(new java.awt.GridLayout(0, 1, 4, 4));
+        panel.add(new javax.swing.JLabel("Language / Idioma / Langue:"));
+        panel.add(language);
+        panel.add(new javax.swing.JLabel(" "));
+        panel.add(new javax.swing.JLabel("Install directory: " + LauncherConfig.CACHE_DIR));
+        int ok = JOptionPane.showConfirmDialog(this, panel, "Settings", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (ok != JOptionPane.OK_OPTION) return;
+        try {
+            java.nio.file.Files.createDirectories(file.getParent());
+            java.nio.file.Files.write(file, codes[language.getSelectedIndex()].getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            setStatus("Language: " + names[language.getSelectedIndex()]);
+        } catch (IOException e) {
+            setStatus("Couldn't save the language: " + e.getMessage());
+        }
     }
 
     private void onExit() {
