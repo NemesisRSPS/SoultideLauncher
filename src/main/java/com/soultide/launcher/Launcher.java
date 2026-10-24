@@ -46,6 +46,8 @@ public final class Launcher extends JFrame {
     // versa). See LauncherConfig's own comment for why each channel gets its own cached jar/version
     // file instead of sharing one.
     private String channel = loadChannel();
+    private String world = loadWorld();
+    private JButton soultideButton, bloodtideButton;
     private final JLabel betaBanner = new JLabel("BETA CLIENT - press Ctrl+B for live", SwingConstants.CENTER);
     private JButton updateHotspot;
     private JButton playHotspot;
@@ -124,6 +126,11 @@ public final class Launcher extends JFrame {
         addHotspot(root, 3, "Exit", e -> onExit());
         addHotspot(root, 4, "Support", e -> onSupport());
 
+        // the world picker, above the status line
+        soultideButton = worldButton(root, "SOULTIDE", WIDTH / 2 - 152, LauncherConfig.WORLD_SOULTIDE);
+        bloodtideButton = worldButton(root, "BLOODTIDE", WIDTH / 2 + 4, LauncherConfig.WORLD_BLOODTIDE);
+        refreshWorldButtons();
+
         betaBanner.setOpaque(true);
         betaBanner.setBackground(new Color(120, 30, 30));
         betaBanner.setForeground(Color.WHITE);
@@ -162,6 +169,75 @@ public final class Launcher extends JFrame {
         return LauncherConfig.CHANNEL_BETA.equals(channel);
     }
 
+    /** The world that actually plays: on live it's always Soultide until Bloodtide live opens. */
+    private boolean isBloodtide() {
+        return LauncherConfig.WORLD_BLOODTIDE.equals(world) && (isBeta() || LauncherConfig.BLOODTIDE_LIVE_OPEN);
+    }
+
+    private String effectiveWorld() {
+        return isBloodtide() ? LauncherConfig.WORLD_BLOODTIDE : LauncherConfig.WORLD_SOULTIDE;
+    }
+
+    /** What gets downloaded and played: the picked world's client on the live or beta channel. */
+    private String releaseChannel() {
+        return LauncherConfig.releaseChannel(effectiveWorld(), channel);
+    }
+
+    private static String loadWorld() {
+        try {
+            if (Files.isRegularFile(LauncherConfig.WORLD_FILE)) {
+                String saved = new String(Files.readAllBytes(LauncherConfig.WORLD_FILE), StandardCharsets.UTF_8).trim();
+                if (LauncherConfig.WORLD_BLOODTIDE.equals(saved)) {
+                    return LauncherConfig.WORLD_BLOODTIDE;
+                }
+            }
+        } catch (IOException ignored) {
+        }
+        return LauncherConfig.WORLD_SOULTIDE;
+    }
+
+    private JButton worldButton(JComponent root, String label, int x, String id) {
+        JButton b = new JButton(label);
+        b.setBounds(x, 356, 148, 30);
+        b.setFont(b.getFont().deriveFont(Font.BOLD, 13f));
+        b.setFocusPainted(false);
+        b.setContentAreaFilled(false);
+        b.setOpaque(true);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setToolTipText(LauncherConfig.WORLD_BLOODTIDE.equals(id) ? "Bloodtide - the second world" : "Soultide - the main world");
+        b.addActionListener(e -> pickWorld(id));
+        root.add(b);
+        return b;
+    }
+
+    private void refreshWorldButtons() {
+        boolean shown = isBeta() || LauncherConfig.BLOODTIDE_LIVE_OPEN;
+        soultideButton.setVisible(shown);
+        bloodtideButton.setVisible(shown);
+        style(soultideButton, !isBloodtide(), new Color(122, 74, 214));
+        style(bloodtideButton, isBloodtide(), new Color(178, 34, 34));
+    }
+
+    private static void style(JButton b, boolean on, Color accent) {
+        b.setBackground(on ? accent : new Color(20, 16, 28, 210));
+        b.setForeground(on ? Color.WHITE : new Color(190, 182, 210));
+        b.setBorder(BorderFactory.createLineBorder(on ? accent.brighter() : new Color(80, 70, 100), on ? 2 : 1));
+    }
+
+    private void pickWorld(String id) {
+        if (id.equals(world)) return;
+        world = id;
+        try {
+            Files.createDirectories(LauncherConfig.CACHE_DIR);
+            Files.write(LauncherConfig.WORLD_FILE, world.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ignored) {
+            // the pick still applies for this session
+        }
+        refreshWorldButtons();
+        setStatus((isBloodtide() ? "Bloodtide" : "Soultide") + " selected");
+        checkForUpdatesSilently();
+    }
+
     private static String loadChannel() {
         try {
             if (Files.isRegularFile(LauncherConfig.CHANNEL_FILE)) {
@@ -184,6 +260,7 @@ public final class Launcher extends JFrame {
             // Worst case the choice doesn't survive a relaunch - not worth failing the toggle over.
         }
         betaBanner.setVisible(isBeta());
+        refreshWorldButtons();
         setStatus(isBeta() ? "Switched to BETA client" : "Switched to LIVE client");
         checkForUpdatesSilently();
     }
@@ -272,14 +349,14 @@ public final class Launcher extends JFrame {
     }
 
     private boolean localJarExists() {
-        return Files.isRegularFile(LauncherConfig.CACHE_DIR.resolve(LauncherConfig.clientJarName(channel)));
+        return Files.isRegularFile(LauncherConfig.CACHE_DIR.resolve(LauncherConfig.clientJarName(releaseChannel())));
     }
 
     /** Background check on startup - reports whether an update is available, but never
      *  auto-downloads. Downloading only ever happens via the Update hotspot, matching the artwork's
      *  own explicit Update button rather than forcing a download on every launch. */
     private void checkForUpdatesSilently() {
-        final String checkedChannel = channel;
+        final String checkedChannel = releaseChannel();
         setStatus(localJarExists() ? "Checking for updates..." : "No client installed - click Update");
         new SwingWorker<Void, Void>() {
             private String latestVersion;
@@ -297,8 +374,8 @@ public final class Launcher extends JFrame {
 
             @Override
             protected void done() {
-                if (!checkedChannel.equals(channel)) {
-                    return; // player toggled channels again before this background check returned
+                if (!checkedChannel.equals(releaseChannel())) {
+                    return; // player toggled channels / worlds again before this background check returned
                 }
                 String localVersion = UpdateChecker.readLocalVersion(checkedChannel);
                 if (error != null) {
@@ -315,7 +392,7 @@ public final class Launcher extends JFrame {
     }
 
     private void onUpdate() {
-        final String updatingChannel = channel;
+        final String updatingChannel = releaseChannel();
         setBusy(true);
         setStatus("Checking for updates...");
         progressBar.setVisible(true);
@@ -394,8 +471,8 @@ public final class Launcher extends JFrame {
             return;
         }
         setBusy(true);
-        setStatus("Launching" + (isBeta() ? " (beta)" : "") + "...");
-        Path jarPath = LauncherConfig.CACHE_DIR.resolve(LauncherConfig.clientJarName(channel));
+        setStatus("Launching " + (isBloodtide() ? "Bloodtide" : "Soultide") + (isBeta() ? " (beta)" : "") + "...");
+        Path jarPath = LauncherConfig.CACHE_DIR.resolve(LauncherConfig.clientJarName(releaseChannel()));
         String javaBin = ClientJavaResolver.resolveClientJavaExecutable();
         Path logFile = LauncherConfig.CACHE_DIR.resolve("client-launch.log");
         try {

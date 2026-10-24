@@ -31,6 +31,20 @@ final class LauncherConfig {
     static final String CHANNEL_LIVE = "live";
     static final String CHANNEL_BETA = "beta";
     static final Path CHANNEL_FILE = CACHE_DIR.resolve(".launcher-channel");
+    // World picker (2026-10-24, user: "the picker for world needs to go on launcher"): Soultide or Bloodtide. Each world
+    // has its own client build - Bloodtide's release channels are "bloodtide-live" / "bloodtide-beta" on the update
+    // server - so a Bloodtide-only client change never reaches Soultide players. Remembered like the channel.
+    static final String WORLD_SOULTIDE = "soultide";
+    static final String WORLD_BLOODTIDE = "bloodtide";
+    static final Path WORLD_FILE = CACHE_DIR.resolve(".launcher-world");
+    /** Bloodtide only runs on beta for now: until this is true the picker shows on the beta channel only (Ctrl+B), and
+     *  live always plays Soultide - players don't see a world they can't join. */
+    static final boolean BLOODTIDE_LIVE_OPEN = false;
+
+    /** The update server's release channel for a world + live/beta. */
+    static String releaseChannel(String world, String channel) {
+        return WORLD_BLOODTIDE.equals(world) ? "bloodtide-" + channel : channel;
+    }
     /** The game's language (en/es/pt/fr) - read by the client (com.soultide.Lang), set here or in-game. */
     static final Path LANGUAGE_FILE = CACHE_DIR.resolve(".language");
 
