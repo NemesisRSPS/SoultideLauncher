@@ -132,14 +132,14 @@ jobs:
           $version = "${{ needs.build-and-release.outputs.tag }}".TrimStart('v')
           jpackage `
             --input . `
-            --name SoultideLauncher `
+            --name Waystone `
             --main-jar SoultideLauncher.jar `
-            --main-class com.soultide.launcher.Launcher `
+            --main-class com.soultide.launcher.WaystoneApp `
             --type exe `
             --app-version $version `
-            --vendor Soultide `
-            --description "Soultide Launcher" `
-            --icon packaging\icon.ico `
+            --vendor Waystone `
+            --description "Waystone - every world, one launcher" `
+            --icon packaging\waystone.ico `
             --app-content client-jdk8 `
             --win-shortcut `
             --win-menu `
@@ -149,9 +149,12 @@ jobs:
         shell: pwsh
         run: |
           $exe = Get-ChildItem out\*.exe | Select-Object -First 1
+          # Waystone-Setup.exe for new players; SoultideLauncher-Setup.exe is the name the old Soultide launcher's
+          # self-update looks for, so existing players are offered Waystone automatically (2026-10-24).
+          Copy-Item $exe.FullName Waystone-Setup.exe
           Copy-Item $exe.FullName SoultideLauncher-Setup.exe
 
       - name: Upload installer to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ needs.build-and-release.outputs.tag }}" SoultideLauncher-Setup.exe --clobber --repo ${{ github.repository }}
+        run: gh release upload "${{ needs.build-and-release.outputs.tag }}" Waystone-Setup.exe SoultideLauncher-Setup.exe --clobber --repo ${{ github.repository }}
