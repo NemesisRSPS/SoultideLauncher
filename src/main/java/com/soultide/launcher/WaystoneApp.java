@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Properties;
 import java.util.Map;
 
 /**
@@ -468,9 +469,22 @@ public final class WaystoneApp extends JFrame {
                     Path dir = installDir(s);
                     Files.createDirectories(dir);
                     if (!Files.isRegularFile(jarPath(s, ch)) || !b.version.equals(localVersion(s, ch))) {
+                        Properties have = installedHashes(dir);
                         for (String f : b.files) {
                             Path dest = f.equals(b.jarAsset) ? jarPath(s, ch) : dir.resolve(f);
+                            String key = dest.getFileName().toString();
+                            String want = b.hashes == null ? null : b.hashes.get(f);
+                            if (want != null && want.equals(have.getProperty(key)) && Files.isRegularFile(dest)) {
+                                continue; // already on disk from an earlier build (Bloodtide's 120 MB cache)
+                            }
                             WaystoneApi.download(s.id, ch, f, dest, pct -> publish(new Object[]{f, pct}));
+                            if (want != null && want.startsWith("sha256:") && !want.substring(7).equalsIgnoreCase(WaystoneApi.sha256(dest))) {
+                                Files.deleteIfExists(dest);
+                                throw new IOException(f + " didn't download correctly - press Play to try again");
+                            }
+                            if (want != null) have.setProperty(key, want);
+                            else have.remove(key);
+                            saveInstalledHashes(dir, have);
                         }
                         Files.write(versionPath(s, ch), b.version.getBytes(StandardCharsets.UTF_8));
                     }
@@ -515,6 +529,25 @@ public final class WaystoneApp extends JFrame {
                 }
             }
         }.execute();
+    }
+
+    /** What's on disk in an install folder: file name -> the hub's hash it was downloaded as. Shared by its channels. */
+    private static Properties installedHashes(Path dir) {
+        Properties p = new Properties();
+        Path f = dir.resolve(".waystone-files");
+        if (Files.isRegularFile(f)) {
+            try (java.io.Reader r = Files.newBufferedReader(f, StandardCharsets.UTF_8)) {
+                p.load(r);
+            } catch (IOException ignored) {
+            }
+        }
+        return p;
+    }
+
+    private static void saveInstalledHashes(Path dir, Properties p) throws IOException {
+        try (java.io.Writer w = Files.newBufferedWriter(dir.resolve(".waystone-files"), StandardCharsets.UTF_8)) {
+            p.store(w, "Waystone: files in this folder and the build hash each came from");
+        }
     }
 
     private void launch(WaystoneApi.Server s, String ch) throws IOException {

@@ -126,6 +126,9 @@ jobs:
       # Neither is worth chasing further - ClientJavaResolver.java already checks several plausible
       # locations for client-jdk8 defensively instead of assuming one, so this ships without a CI-
       # confirmed exact path; verify by testing the installed app directly if Play still can't find it.
+      # Java 11+ clients (Bloodtide's OSV-based client) run on Waystone's own Java 21 runtime (WaystoneApp.ownJava),
+      # so that runtime keeps bin\java(w).exe - jpackage's default jlink options strip them (--strip-native-commands) -
+      # and the full java.se module set plus what RuneLite-based clients use.
       - name: Build the installer
         shell: pwsh
         run: |
@@ -141,6 +144,8 @@ jobs:
             --description "Waystone - every world, one launcher" `
             --icon packaging\waystone.ico `
             --app-content client-jdk8 `
+            --add-modules java.se,jdk.unsupported,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.zipfs,jdk.charsets,jdk.localedata,jdk.accessibility,jdk.management,jdk.net,jdk.jfr `
+            --jlink-options "--strip-debug --no-man-pages --no-header-files" `
             --win-shortcut `
             --win-menu `
             --dest out

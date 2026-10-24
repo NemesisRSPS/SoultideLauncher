@@ -52,6 +52,23 @@ final class WaystoneApi {
     static final class Build {
         String version, jarAsset;
         List<String> files = new ArrayList<>();
+        /** "sha256:<hex>" per file when the hub knows it - unchanged files aren't downloaded again. */
+        java.util.Map<String, String> hashes = new java.util.HashMap<>();
+    }
+
+    /** Lower-case hex sha256 of a file. */
+    static String sha256(Path f) throws IOException {
+        try (InputStream in = Files.newInputStream(f)) {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] buf = new byte[1 << 16];
+            int n;
+            while ((n = in.read(buf)) != -1) md.update(buf, 0, n);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : md.digest()) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IOException(e);
+        }
     }
 
     private static final class ServerList {
