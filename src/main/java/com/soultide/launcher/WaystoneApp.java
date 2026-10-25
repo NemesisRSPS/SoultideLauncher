@@ -552,7 +552,10 @@ public final class WaystoneApp extends JFrame {
 
     private void launch(WaystoneApi.Server s, String ch) throws IOException {
         Path dir = installDir(s);
-        String java = s.javaVersion <= 8 ? ClientJavaResolver.resolveClientJavaExecutable() : ownJava();
+        String java = s.javaVersion <= 8 ? ClientJavaResolver.resolveClientJavaExecutable() : ClientJavaResolver.resolveJavaAtLeast(s.javaVersion);
+        if (java == null) {
+            throw new IOException(s.name + " needs Java " + s.javaVersion + " - reinstall Waystone, or install Java " + s.javaVersion);
+        }
         List<String> cmd = new ArrayList<>();
         cmd.add(java);
         ownJar().ifPresent(p -> cmd.add("-DlauncherJar=" + p)); // a client's own "update available" notice can reopen Waystone
@@ -560,12 +563,6 @@ public final class WaystoneApp extends JFrame {
         cmd.add(jarPath(s, ch).toString());
         new ProcessBuilder(cmd).directory(dir.toFile()).redirectErrorStream(true)
                 .redirectOutput(dir.resolve("client-launch.log").toFile()).start();
-    }
-
-    private static String ownJava() {
-        String home = System.getProperty("java.home");
-        java.io.File w = new java.io.File(home, "bin/javaw.exe"), j = new java.io.File(home, "bin/java");
-        return w.isFile() ? w.getPath() : j.isFile() ? j.getPath() : "java";
     }
 
     private static java.util.Optional<String> ownJar() {

@@ -46,6 +46,83 @@ final class ClientJavaResolver {
         return bundled != null ? ("bundled JDK 8 at " + bundled) : "launcher's own runtime (no bundled client-jdk8 found)";
     }
 
+    /**
+     * A java executable of at least {@code major}: this launcher's own runtime when it is new enough
+     * (the installer bundles 21), else the newest qualifying JDK/JRE found on the machine - e.g. when
+     * the bare jar was double-clicked and Windows opened it with an old Java 8. Null if none.
+     */
+    static String resolveJavaAtLeast(int major) {
+        String home = System.getProperty("java.home");
+        if (home != null && majorOf(System.getProperty("java.specification.version")) >= major) {
+            String own = resolveJavaExecutableIn(new File(home));
+            if (own != null) {
+                return own;
+            }
+        }
+        java.util.List<File> homes = new java.util.ArrayList<>();
+        String env = System.getenv("JAVA_HOME");
+        if (env != null) {
+            homes.add(new File(env));
+        }
+        java.util.List<File> roots = new java.util.ArrayList<>();
+        for (String pf : new String[]{System.getenv("ProgramFiles"), System.getenv("ProgramW6432")}) {
+            if (pf != null) {
+                for (String vendor : new String[]{"Eclipse Adoptium", "Java", "Microsoft", "Zulu", "Amazon Corretto", "BellSoft", "Semeru"}) {
+                    roots.add(new File(pf, vendor));
+                }
+            }
+        }
+        roots.add(new File(System.getProperty("user.home"), ".jdks"));
+        for (File root : roots) {
+            File[] kids = root.listFiles(File::isDirectory);
+            if (kids != null) {
+                homes.addAll(java.util.Arrays.asList(kids));
+            }
+        }
+        String best = null;
+        int bestMajor = 0;
+        for (File h : homes) {
+            int m = releaseMajor(h);
+            String exe = m >= major && m > bestMajor ? resolveJavaExecutableIn(h) : null;
+            if (exe != null) {
+                best = exe;
+                bestMajor = m;
+            }
+        }
+        return best;
+    }
+
+    /** Feature version from a JDK's "release" file (JAVA_VERSION="21.0.11"), 0 if unreadable. */
+    private static int releaseMajor(File javaHome) {
+        File release = new File(javaHome, "release");
+        if (!release.isFile()) {
+            return 0;
+        }
+        try {
+            for (String line : java.nio.file.Files.readAllLines(release.toPath(), java.nio.charset.StandardCharsets.ISO_8859_1)) {
+                if (line.startsWith("JAVA_VERSION=")) {
+                    return majorOf(line.substring(13).replace("\"", "").trim());
+                }
+            }
+        } catch (java.io.IOException ignored) {
+        }
+        return 0;
+    }
+
+    /** "1.8.0_503" -> 8, "21.0.11" -> 21, "17" -> 17. */
+    private static int majorOf(String v) {
+        if (v == null) {
+            return 0;
+        }
+        String[] p = v.split("[._+-]");
+        try {
+            int first = Integer.parseInt(p[0]);
+            return first == 1 && p.length > 1 ? Integer.parseInt(p[1]) : first;
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
     private static String resolveOwnJavaExecutable() {
         String home = System.getProperty("java.home");
         String resolved = home != null ? resolveJavaExecutableIn(new File(home)) : null;
