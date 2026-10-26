@@ -1,13 +1,16 @@
-# SoultideLauncher
+# Waystone (SoultideLauncher repo)
 
-A small Swing app: checks the VPS for the latest SoultideClient release, downloads it (plus loose
-runtime assets like the loading/login screen art) if out of date, then launches the client.
+Waystone is the multi-server launcher: it lists every world from the VPS hub (`/waystone/api/servers`),
+installs and updates each world's client, then runs it on the Java it needs. The old single-server Soultide
+launcher (`Launcher.java`, the `/launcher/*` routes below) is still in the repo for old installs.
 
 ## Getting it
 
-- **Windows, no Java required:** grab `SoultideLauncher-Setup.exe` from the
+- **Windows, no Java required:** grab `Waystone-Setup.exe` from the
   [latest release](https://github.com/NemesisRSPS/SoultideLauncher/releases/latest) and run it - a
   real installer with Java bundled inside, built by `jpackage` (see `.github/workflows/build.yml`).
+  The same installer is also uploaded as `SoultideLauncher-Setup.exe`, the name old Soultide
+  launchers self-update from, so existing players move to Waystone automatically.
 - **Any OS with Java already installed:** grab `SoultideLauncher.jar` from the same release and run
   `java -jar SoultideLauncher.jar`, or double-click it if your system runs jars on double-click.
 
@@ -40,4 +43,4 @@ mvn package
 ```
 
 Produces a shaded, runnable jar at `target/soultide-launcher-*.jar` (Main-Class:
-`com.soultide.launcher.Launcher`, dependencies bundled).
+`com.soultide.launcher.WaystoneApp`, dependencies bundled).
