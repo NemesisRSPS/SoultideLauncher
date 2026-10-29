@@ -244,18 +244,19 @@ public final class Launcher extends JFrame {
             protected void done() {
                 try {
                     LauncherSelfUpdate.LatestInfo latest = get();
-                    if (latest.downloadUrl == null || own.equals(latest.version)) {
+                    if (!latest.available() || own.equals(latest.version)) {
                         return;
                     }
                     int choice = JOptionPane.showConfirmDialog(Launcher.this,
                             "A launcher update (" + latest.version + ") is available.\n"
-                                    + "Update now? The launcher will close and the installer will open.",
+                                    + (LauncherSelfUpdate.WINDOWS ? "Update now? The launcher will close and the installer will open."
+                                    : "Update now? The launcher will download it and restart."),
                             "Launcher Update Available", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
                     if (choice != JOptionPane.YES_OPTION) {
                         return;
                     }
                     try {
-                        LauncherSelfUpdate.downloadAndLaunchInstaller(latest.downloadUrl);
+                        LauncherSelfUpdate.install(latest);
                         dispose();
                         System.exit(0);
                     } catch (IOException e) {

@@ -1059,11 +1059,11 @@ public final class WaystoneApp extends JFrame {
             protected void done() {
                 try {
                     LauncherSelfUpdate.LatestInfo latest = get();
-                    if (latest.downloadUrl == null || own.equals(latest.version)) return;
+                    if (!latest.available() || own.equals(latest.version)) return;
                     int c = JOptionPane.showConfirmDialog(WaystoneApp.this, "Waystone " + latest.version + " is available. Update now?",
                             "Waystone update", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
                     if (c == JOptionPane.YES_OPTION) {
-                        LauncherSelfUpdate.downloadAndLaunchInstaller(latest.downloadUrl);
+                        LauncherSelfUpdate.install(latest);
                         System.exit(0);
                     }
                 } catch (Exception ignored) {
