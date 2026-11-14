@@ -46,6 +46,7 @@ public final class WaystoneApp extends JFrame {
     private final JProgressBar progress = new JProgressBar(0, 100);
     private final JPanel channelBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
     private final PlayButton play = new PlayButton();
+    private final DiscordButton discord = new DiscordButton();
     private boolean busy;
 
     private WaystoneApp() {
@@ -230,7 +231,16 @@ public final class WaystoneApp extends JFrame {
         bar.add(left, BorderLayout.CENTER);
         play.setPreferredSize(new Dimension(200, 56));
         play.addActionListener(e -> onPlay());
-        bar.add(play, BorderLayout.EAST);
+        discord.setPreferredSize(new Dimension(132, 56));
+        discord.setToolTipText("Join this game's Discord");
+        discord.addActionListener(e -> {
+            if (selected != null && selected.discord != null && !selected.discord.isEmpty()) open(selected.discord);
+        });
+        JPanel east = new JPanel(new BorderLayout(10, 0));
+        east.setOpaque(false);
+        east.add(discord, BorderLayout.WEST);
+        east.add(play, BorderLayout.EAST);
+        bar.add(east, BorderLayout.EAST);
         return bar;
     }
 
@@ -348,6 +358,7 @@ public final class WaystoneApp extends JFrame {
         play.setText(selected == null ? "PLAY" : channel == null ? "COMING SOON" : "PLAY");
         play.setEnabled(!busy && selected != null && channel != null);
         play.repaint();
+        discord.setVisible(selected != null && selected.discord != null && !selected.discord.isEmpty());
     }
 
     private void rebuildNews() {
@@ -897,6 +908,59 @@ public final class WaystoneApp extends JFrame {
             g.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, getHeight(), getHeight());
             g.dispose();
             super.paintComponent(g0);
+        }
+    }
+
+    /** Opens the selected world's own Discord, beside Play. */
+    private static final class DiscordButton extends JButton {
+        private static final Color BLURPLE = new Color(88, 101, 242);
+        boolean hover;
+
+        DiscordButton() {
+            super("DISCORD");
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    hover = true;
+                    repaint();
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    hover = false;
+                    repaint();
+                }
+            });
+        }
+
+        @Override
+        protected void paintComponent(Graphics g0) {
+            Graphics2D g = (Graphics2D) g0.create();
+            aa(g);
+            int w = getWidth(), h = getHeight();
+            Color top = mix(BLURPLE, Color.WHITE, hover ? 0.22 : 0.08), bot = mix(BLURPLE, Color.BLACK, 0.22);
+            g.setPaint(new GradientPaint(0, 0, top, 0, h, bot));
+            g.fillRoundRect(3, 3, w - 6, h - 6, 14, 14);
+            g.setColor(alpha(Color.WHITE, 70));
+            g.drawRoundRect(3, 3, w - 7, h - 7, 14, 14);
+            g.setFont(getFont().deriveFont(Font.BOLD, 13f));
+            FontMetrics fm = g.getFontMetrics();
+            String t = getText();
+            int bw = 20, bh = 14, gap = 8, total = bw + gap + fm.stringWidth(t);
+            int x = (w - total) / 2, cy = h / 2;
+            g.setColor(Color.WHITE); // chat bubble
+            g.fillRoundRect(x, cy - bh / 2 - 1, bw, bh, 8, 8);
+            g.fillPolygon(new int[]{x + 4, x + 10, x + 4}, new int[]{cy + bh / 2 - 3, cy + bh / 2 - 1, cy + bh / 2 + 4}, 3);
+            g.setColor(BLURPLE);
+            g.fillOval(x + 5, cy - 3, 4, 4);
+            g.fillOval(x + 11, cy - 3, 4, 4);
+            g.setColor(Color.WHITE);
+            g.drawString(t, x + bw + gap, (h + fm.getAscent() - fm.getDescent()) / 2);
+            g.dispose();
         }
     }
 
