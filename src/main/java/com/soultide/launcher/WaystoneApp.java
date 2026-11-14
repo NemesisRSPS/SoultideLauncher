@@ -522,10 +522,8 @@ public final class WaystoneApp extends JFrame {
                 if (err != null) {
                     setStatus("Couldn't start " + s.name + ": " + err);
                 } else {
+                    // Stay open: players can start another game (or a second client) from here.
                     setStatus(s.name + " is starting - have fun!");
-                    Timer t = new Timer(2500, e -> System.exit(0));
-                    t.setRepeats(false);
-                    t.start();
                 }
             }
         }.execute();
