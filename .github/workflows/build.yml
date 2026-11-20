@@ -9,12 +9,16 @@ on:
   push:
     branches:
       - master
+      # Mac installer test builds (2026-11-20): only the macOS jobs run here, and their disk images are workflow
+      # artifacts - nothing is released and no player is offered an update.
+      - mac-installer
 
 permissions:
   contents: write
 
 jobs:
   build-and-release:
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.version.outputs.tag }}
@@ -163,3 +167,104 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ needs.build-and-release.outputs.tag }}" Waystone-Setup.exe SoultideLauncher-Setup.exe --clobber --repo ${{ github.repository }}
+
+  # Mac installers (2026-11-20, user: "put a mac installer on the launcher"): a Waystone.app in a .dmg for each chip, with the
+  # launcher's own Java 21 runtime and - as on Windows - a separate Java 8 (Zulu: Temurin has no Apple Silicon Java 8) in
+  # Contents/client-jdk8 for the Soultide client, which ClientJavaResolver finds one level above Contents/app. Not signed with an
+  # Apple Developer ID (none yet), so players open it once with right-click > Open (or Privacy & Security > Open Anyway).
+  build-mac-installer:
+    needs: build-and-release
+    if: always() && (needs.build-and-release.result == 'success' || (github.ref != 'refs/heads/master' && needs.build-and-release.result == 'skipped'))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            asset: Waystone-Mac-AppleSilicon.dmg
+          - runner: macos-15-intel
+            asset: Waystone-Mac-Intel.dmg
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 8 (bundled as client-jdk8 for the game client)
+        id: jdk8
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '8'
+
+      - name: Set up JDK 21 (runs jpackage and becomes the launcher's own runtime)
+        id: jdk21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: The launcher jar (the release's on master, built here on a test branch)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p input
+          if [ "${{ github.ref }}" = "refs/heads/master" ]; then
+            gh release download "${{ needs.build-and-release.outputs.tag }}" -p SoultideLauncher.jar --repo ${{ github.repository }} -D input
+          else
+            echo -n "mac-test" > src/main/resources/launcher-version.txt
+            JAVA_HOME="${{ steps.jdk8.outputs.path }}" mvn -B -q package
+            JAR=$(find target -maxdepth 1 -name '*.jar' ! -name '*-sources.jar' ! -name 'original-*.jar' | head -1)
+            cp "$JAR" input/SoultideLauncher.jar
+          fi
+          ls -la input
+
+      - name: Stage Java 8 for --app-content
+        run: |
+          ditto "${{ steps.jdk8.outputs.path }}" client-jdk8
+          client-jdk8/bin/java -version
+
+      # macOS wants the first number of a version to be 1 or more: v0.0.18 ships as 1.0.18
+      - name: Build Waystone.app
+        run: |
+          TAG="${{ needs.build-and-release.outputs.tag }}"
+          TAG="${TAG:-v0.0.0}"
+          IFS='.' read -r MA MI PA <<< "${TAG#v}"
+          echo "APPVER=1.${MI}.${PA}" >> "$GITHUB_ENV"
+          "${{ steps.jdk21.outputs.path }}/bin/jpackage" \
+            --type app-image \
+            --input input \
+            --name Waystone \
+            --main-jar SoultideLauncher.jar \
+            --main-class com.soultide.launcher.WaystoneApp \
+            --app-version "1.${MI}.${PA}" \
+            --vendor Waystone \
+            --description "Waystone - every world, one launcher" \
+            --icon packaging/waystone.icns \
+            --app-content client-jdk8 \
+            --add-modules java.se,jdk.unsupported,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.zipfs,jdk.charsets,jdk.localedata,jdk.accessibility,jdk.management,jdk.net,jdk.jfr \
+            --jlink-options "--strip-debug --no-man-pages --no-header-files" \
+            --mac-package-identifier com.soultide.waystone \
+            --mac-package-name Waystone \
+            --dest out
+          ls out/Waystone.app/Contents
+          ls out/Waystone.app/Contents/client-jdk8/bin/java out/Waystone.app/Contents/runtime/Contents/Home/bin/java
+          codesign --verify --deep --strict --verbose=2 out/Waystone.app || echo "::warning::codesign verify failed"
+
+      - name: Build the disk image
+        run: |
+          "${{ steps.jdk21.outputs.path }}/bin/jpackage" --type dmg --app-image out/Waystone.app --name Waystone \
+            --app-version "$APPVER" --vendor Waystone --dest dmg
+          cp dmg/*.dmg "${{ matrix.asset }}"
+          ls -la "${{ matrix.asset }}"
+
+      - name: Upload to the release
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ needs.build-and-release.outputs.tag }}" "${{ matrix.asset }}" --clobber --repo ${{ github.repository }}
+
+      - name: Keep the test build
+        if: github.ref != 'refs/heads/master'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}

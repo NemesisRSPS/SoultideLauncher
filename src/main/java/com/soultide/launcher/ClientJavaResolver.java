@@ -73,10 +73,16 @@ final class ClientJavaResolver {
             }
         }
         roots.add(new File(System.getProperty("user.home"), ".jdks"));
+        // macOS (2026-11-20): installed JDKs live in /Library/Java/JavaVirtualMachines/<jdk>/Contents/Home
+        roots.add(new File("/Library/Java/JavaVirtualMachines"));
+        roots.add(new File(System.getProperty("user.home"), "Library/Java/JavaVirtualMachines"));
         for (File root : roots) {
             File[] kids = root.listFiles(File::isDirectory);
             if (kids != null) {
-                homes.addAll(java.util.Arrays.asList(kids));
+                for (File k : kids) {
+                    File macHome = new File(k, "Contents/Home");
+                    homes.add(macHome.isDirectory() ? macHome : k);
+                }
             }
         }
         String best = null;

@@ -29,6 +29,19 @@ import java.nio.file.StandardCopyOption;
 final class LauncherSelfUpdate {
     private static final String API_URL = "https://api.github.com/repos/NemesisRSPS/SoultideLauncher/releases/latest";
     private static final String INSTALLER_ASSET_NAME = "SoultideLauncher-Setup.exe";
+    /** The Mac installers (2026-11-20, user: "put a mac installer on the launcher"): one per chip, built by build.yml's macOS jobs. */
+    static final String MAC_ARM_ASSET = "Waystone-Mac-AppleSilicon.dmg", MAC_INTEL_ASSET = "Waystone-Mac-Intel.dmg";
+
+    static boolean mac() {
+        return System.getProperty("os.name", "").toLowerCase().startsWith("mac");
+    }
+
+    /** This machine's installer on a release: the .dmg for this Mac's chip, else the Windows setup. */
+    static String installerAssetName() {
+        if (!mac()) return INSTALLER_ASSET_NAME;
+        String arch = System.getProperty("os.arch", "").toLowerCase();
+        return arch.contains("aarch64") || arch.contains("arm") ? MAC_ARM_ASSET : MAC_INTEL_ASSET;
+    }
 
     static final class LatestInfo {
         final String version;
@@ -77,7 +90,7 @@ final class LauncherSelfUpdate {
         String url = null;
         for (JsonElement el : o.getAsJsonArray("assets")) {
             JsonObject a = el.getAsJsonObject();
-            if (INSTALLER_ASSET_NAME.equals(a.get("name").getAsString())) {
+            if (installerAssetName().equals(a.get("name").getAsString())) {
                 url = a.get("browser_download_url").getAsString();
                 break;
             }
@@ -92,7 +105,7 @@ final class LauncherSelfUpdate {
      *  started - the caller must exit immediately afterward, since Windows won't let that
      *  installer overwrite this process's own running exe/jar files while they're still open. */
     static void downloadAndLaunchInstaller(String url) throws IOException {
-        Path tempFile = Files.createTempFile("SoultideLauncher-Setup-", ".exe");
+        Path tempFile = mac() ? Files.createTempFile("Waystone-", ".dmg") : Files.createTempFile("SoultideLauncher-Setup-", ".exe");
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setInstanceFollowRedirects(true);
         conn.setConnectTimeout(10_000);
@@ -105,6 +118,10 @@ final class LauncherSelfUpdate {
             Files.copy(in, tempFile, StandardCopyOption.REPLACE_EXISTING);
         } finally {
             conn.disconnect();
+        }
+        if (mac()) { // the disk image opens in Finder: drag Waystone onto Applications to replace the old one
+            new ProcessBuilder("open", tempFile.toString()).start();
+            return;
         }
         new ProcessBuilder(tempFile.toString()).start();
     }
