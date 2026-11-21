@@ -154,7 +154,7 @@ jobs:
             --add-modules java.se,jdk.unsupported,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.zipfs,jdk.charsets,jdk.localedata,jdk.accessibility,jdk.management,jdk.net,jdk.jfr `
             --jlink-options "--strip-debug --no-man-pages --no-header-files" `
             --java-options "-Dsun.java2d.d3d=false" `
-            --add-launcher "Waystone Troubleshoot=packaging	roubleshoot.properties" `
+            --add-launcher "Waystone Troubleshoot=packaging/troubleshoot.properties" `
             --win-shortcut `
             --win-menu `
             --dest out
