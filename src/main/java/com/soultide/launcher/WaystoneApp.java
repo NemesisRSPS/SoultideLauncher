@@ -1091,7 +1091,17 @@ public final class WaystoneApp extends JFrame {
 
     // ---------------------------------------------------------------- start
 
+    /** Where a run writes what happened (2026-11-21: players reported "setup goes through but it can't be opened" - a startup
+     *  error went to a console the installed app doesn't have, so nothing showed). Overwritten each start. */
+    static final java.nio.file.Path STARTUP_LOG = LauncherConfig.CACHE_DIR.resolve("waystone.log");
+    private static volatile boolean windowShown;
+
     public static void main(String[] args) {
+        startLog();
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> {   // a box only while starting; later errors just go to the log
+            if (windowShown) e.printStackTrace();
+            else startupFailed("Waystone hit an error while starting", e);
+        });
         try {
             UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
         } catch (Exception ignored) {
@@ -1099,12 +1109,62 @@ public final class WaystoneApp extends JFrame {
         UIManager.put("ToolTip.background", CARD);
         UIManager.put("ToolTip.foreground", TEXT);
         SwingUtilities.invokeLater(() -> {
-            WaystoneApp app = new WaystoneApp();
-            app.setVisible(true);
-            app.rebuildList();
-            app.loadServers(true);
-            app.selfUpdate();
+            try {
+                WaystoneApp app = new WaystoneApp();
+                app.setVisible(true);
+                app.toFront();
+                windowShown = true;
+                System.out.println("Waystone: window shown at " + app.getBounds() + " on " + app.getGraphicsConfiguration().getBounds());
+                app.rebuildList();
+                app.loadServers(true);
+                app.selfUpdate();
+            } catch (Throwable e) {
+                startupFailed("Waystone couldn't open its window", e);
+            }
         });
+    }
+
+    /** Everything printed from here on also goes to ~/SoultideCache/waystone.log, with the machine details first. */
+    private static void startLog() {
+        try {
+            java.nio.file.Files.createDirectories(LauncherConfig.CACHE_DIR);
+            java.io.PrintStream file = new java.io.PrintStream(new java.io.FileOutputStream(STARTUP_LOG.toFile()), true, "UTF-8");
+            java.io.PrintStream out = System.out, err = System.err;
+            System.setOut(new java.io.PrintStream(new java.io.OutputStream() {
+                @Override public void write(int c) { out.write(c); file.write(c); }
+                @Override public void write(byte[] b, int o, int l) { out.write(b, o, l); file.write(b, o, l); }
+            }, true));
+            System.setErr(new java.io.PrintStream(new java.io.OutputStream() {
+                @Override public void write(int c) { err.write(c); file.write(c); }
+                @Override public void write(byte[] b, int o, int l) { err.write(b, o, l); file.write(b, o, l); }
+            }, true));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        System.out.println("Waystone " + LauncherSelfUpdate.ownVersion() + " starting " + new java.util.Date());
+        System.out.println("Java " + System.getProperty("java.version") + " (" + System.getProperty("java.vendor") + ") at "
+                + System.getProperty("java.home"));
+        System.out.println(System.getProperty("os.name") + " " + System.getProperty("os.version") + " " + System.getProperty("os.arch")
+                + ", user.home " + System.getProperty("user.home") + ", d3d " + System.getProperty("sun.java2d.d3d"));
+    }
+
+    /** A startup error the player can see (and send us): the message, the first lines of the trace and where the log is. */
+    private static void startupFailed(String what, Throwable e) {
+        e.printStackTrace();
+        StringBuilder sb = new StringBuilder(what).append(":
+").append(e).append('
+');
+        StackTraceElement[] st = e.getStackTrace();
+        for (int i = 0; i < Math.min(6, st.length); i++) sb.append("    at ").append(st[i]).append('
+');
+        sb.append("
+Please send this screenshot, or the file
+").append(STARTUP_LOG).append("
+to the Soultide Discord.");
+        try {
+            JOptionPane.showMessageDialog(null, sb.toString(), "Waystone", JOptionPane.ERROR_MESSAGE);
+        } catch (Throwable ignored) {
+        }
     }
 
     /** Same self-update as the Soultide launcher: a newer installer on GitHub -> offer it. */

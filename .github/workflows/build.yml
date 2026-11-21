@@ -133,6 +133,9 @@ jobs:
       # Java 11+ clients (Bloodtide's OSV-based client) run on Waystone's own Java 21 runtime (WaystoneApp.ownJava),
       # so that runtime keeps bin\java(w).exe - jpackage's default jlink options strip them (--strip-native-commands) -
       # and the full java.se module set plus what RuneLite-based clients use.
+      # 2026-11-21 ("setup goes through fine but then cant be opened"): Java's Direct3D drawing off (a common reason a Java window
+      # never appears on some graphics drivers), and a second Start-menu launcher, Waystone Troubleshoot, with a console window
+      # showing what goes wrong; the app also writes ~/SoultideCache/waystone.log and shows startup errors in a box.
       - name: Build the installer
         shell: pwsh
         run: |
@@ -150,6 +153,8 @@ jobs:
             --app-content client-jdk8 `
             --add-modules java.se,jdk.unsupported,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.zipfs,jdk.charsets,jdk.localedata,jdk.accessibility,jdk.management,jdk.net,jdk.jfr `
             --jlink-options "--strip-debug --no-man-pages --no-header-files" `
+            --java-options "-Dsun.java2d.d3d=false" `
+            --add-launcher "Waystone Troubleshoot=packaging	roubleshoot.properties" `
             --win-shortcut `
             --win-menu `
             --dest out
