@@ -1151,16 +1151,10 @@ public final class WaystoneApp extends JFrame {
     /** A startup error the player can see (and send us): the message, the first lines of the trace and where the log is. */
     private static void startupFailed(String what, Throwable e) {
         e.printStackTrace();
-        StringBuilder sb = new StringBuilder(what).append(":
-").append(e).append('
-');
+        StringBuilder sb = new StringBuilder(what).append(":\n").append(e).append('\n');
         StackTraceElement[] st = e.getStackTrace();
-        for (int i = 0; i < Math.min(6, st.length); i++) sb.append("    at ").append(st[i]).append('
-');
-        sb.append("
-Please send this screenshot, or the file
-").append(STARTUP_LOG).append("
-to the Soultide Discord.");
+        for (int i = 0; i < Math.min(6, st.length); i++) sb.append("    at ").append(st[i]).append('\n');
+        sb.append("\nPlease send this screenshot, or the file\n").append(STARTUP_LOG).append("\nto the Soultide Discord.");
         try {
             JOptionPane.showMessageDialog(null, sb.toString(), "Waystone", JOptionPane.ERROR_MESSAGE);
         } catch (Throwable ignored) {
